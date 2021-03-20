@@ -143,6 +143,7 @@ class Embeddings(nn.Module):
             self.hybrid_model = ResNetV2(block_units=config.resnet.num_layers,
                                          width_factor=config.resnet.width_factor)
             in_channels = self.hybrid_model.width * 16
+        self.a = config.hidden_size
         self.patch_embeddings = Conv2d(in_channels=in_channels,
                                        out_channels=config.hidden_size,
                                        kernel_size=patch_size,
@@ -262,23 +263,19 @@ class Transformer(nn.Module):
 class VisionTransformer(nn.Module):
     def __init__(self, config, img_size=224, num_classes=21843, zero_head=False, vis=False):
         super(VisionTransformer, self).__init__()
-        self.num_classes = num_classes
+        self.output_size = num_classes
         self.zero_head = zero_head
         self.classifier = config.classifier
+        self.hidden_size = config.hidden_size
 
         self.transformer = Transformer(config, img_size, vis)
-        self.head = Linear(config.hidden_size, num_classes)
+        self.head = Linear(config.hidden_size, self.output_size)
 
-    def forward(self, x, labels=None):
+    def forward(self, x):
         x, attn_weights = self.transformer(x)
         logits = self.head(x[:, 0])
 
-        if labels is not None:
-            loss_fct = CrossEntropyLoss()
-            loss = loss_fct(logits.view(-1, self.num_classes), labels.view(-1))
-            return loss
-        else:
-            return logits, attn_weights
+        return logits
 
     def load_from(self, weights):
         with torch.no_grad():
@@ -334,6 +331,7 @@ class VisionTransformer(nn.Module):
                 for bname, block in self.transformer.embeddings.hybrid_model.body.named_children():
                     for uname, unit in block.named_children():
                         unit.load_from(weights, n_block=bname, n_unit=uname)
+        self.head = Linear(self.hidden_size, self.output_size)
 
 
 CONFIGS = {
